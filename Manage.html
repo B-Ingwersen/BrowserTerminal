@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {
+                background-color: black;
+                color: white;
+            }
+            span {
+                margin-left: 2px;
+                margin-right: 2px;
+            }
+            .term-entry {
+                font-size: 2em;
+                background-color: #404040;
+                border-color: #808080;
+                border-style: solid;
+                border-width: 2px;
+                padding: 3px;
+            }
+            .session-entry {
+                padding: 15px;
+            }
+            .connected-entry {
+                padding: 15px;
+            }
+            .connect-button {
+                background-color: #000080;
+                padding-left: 15px;
+                padding-right: 15px;
+                float: right;
+                color: white;
+                text-decoration: none;
+            }
+            .connect-button:hover {
+                background-color: #0000FF;
+            }
+            .kill-button {
+                background-color: #800000;
+                padding-left: 15px;
+                padding-right: 15px;
+                float: right;
+            }
+            .kill-button:hover {
+                background-color: #FF0000;
+                cursor: pointer;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Terminal Manager</h1>
+        <div id='entries'></div>
+        <script>
+            // to be filled in when page is served
+            var accessKey = "__ACCESS_KEY__";
+            var wsPort = "__WS_PORT__";
+
+            // fill entries div with list of open terminal sessions
+            const displayState = function(pollResponse) {
+                var entriesDiv = document.getElementById('entries');
+
+                // delete current contents of 'entries'
+                while (entriesDiv.firstChild) {
+                    entriesDiv.removeChild(entriesDiv.firstChild);
+                }
+                
+                // build a row of data for each terminal
+                var i = 0;
+                for (let term of pollResponse) {
+                    
+                    // build the row node
+                    var termNode = document.createElement('div');
+                    termNode.id = 't' + i;
+                    termNode.classList = 'term-entry';
+
+                    // add the sessionID
+                    var sessionNode = document.createElement('span');
+                    sessionNode.innerText = "SessionID=" + term.sessionID;
+                    sessionNode.classList = "session-entry";
+                    termNode.appendChild(sessionNode);
+
+                    // add whether it's connected
+                    var connectedNode = document.createElement('span');
+                    connectedNode.innerText = "Connected=" + term.connected;
+                    connectedNode.classList = "connected-entry";
+                    termNode.appendChild(connectedNode);
+
+                    // add the kill button
+                    var killNode = document.createElement('span');
+                    killNode.id = 'k' + i;
+                    killNode.innerText = "Kill";
+                    killNode.classList = "kill-button";
+                    killNode.dataset.sessionID = term.sessionID;
+                    killNode.addEventListener('click', (event) => {
+                        var sessionID = event.target.dataset.sessionID;
+                        manageWS.send(JSON.stringify({
+                            type : 'kill',
+                            sessionID : sessionID
+                        }));
+                    });
+                    termNode.appendChild(killNode);
+
+                    // add the connect button if not currently connected
+                    if (!term.connected) {
+                        var connectNode = document.createElement('a');
+                        connectNode.id = 'c' + i;
+                        connectNode.innerText = "Connect";
+                        connectNode.classList = "connect-button";
+                        connectNode.href = "/?sessionID=" + term.sessionID;
+                        termNode.appendChild(connectNode);
+                    }
+
+                    // add row to 'entries'
+                    entriesDiv.appendChild(termNode)
+                    i++;
+                }
+            };
+
+            // keyboard shortcuts for managing entries list
+            //  j/k         : Move down/up selected entry
+            //  1-9         : Select entry by index
+            //  ENTER/c     : Connect to terminal
+            //  BACKSPACE   : Kill terminal
+            //  n           : Launch new terminal
+            var keyDownLog = ""; // key log for indexing
+            window.addEventListener('keydown', function(evt) {
+
+                // unhighlight all entries
+                var entries = document.getElementById('entries')
+                for (let child of entries.children) {
+                    child.style.backgroundColor = '#404040';
+                }
+
+                // allow selection by index with number keys
+                if (evt.key.charCodeAt(0) >= '0'.charCodeAt(0) &&
+                    evt.key.charCodeAt(0) <= '9'.charCodeAt(0)) {
+                    
+                    keyDownLog += evt.key;
+                }
+                else if (evt.key == 'j') { // move selected entry down
+                    if (keyDownLog.length == 0) {
+                        keyDownLog = "0";
+                    }
+                    else if (Number(keyDownLog) < entries.children.length - 1) {
+                        keyDownLog = String(Number(keyDownLog) + 1);
+                    }
+
+                }
+                else if (evt.key == 'k') { // move selected entry up
+                    if (keyDownLog.length == 0) {
+                        keyDownLog = String(entries.childen.length - 1);
+                    }
+                    else if (Number(keyDownLog) > 0) {
+                        keyDownLog = String(Number(keyDownLog) - 1);
+                    }
+                }
+                else if ((evt.key == 'c' || evt.key == 'Enter')
+                    && keyDownLog.length > 0) { // connect to terminal
+
+                    var node = document.getElementById('c' + keyDownLog);
+                    if (node) {
+                        node.click();
+                    }
+                }
+                else if (evt.key == 'Backspace'
+                    && keyDownLog.length > 0) { // kill terminal
+
+                    var node = document.getElementById('k' + keyDownLog);
+                    if (node) {
+                        node.click();
+                    }
+                }
+                else if (evt.key == 'n') { // launch new terminal
+                    window.location.href = '/';
+                }
+                else {
+                    keyDownLog = '';
+                }
+
+                // attempt to highlight selected entry
+                if (keyDownLog.length > 0) {
+                    var node = document.getElementById('t' + keyDownLog);
+                    if (node) {
+                        node.style.backgroundColor = '#FF8000';
+                    }
+                    else {
+                        keyDownLog = "";
+                    }
+                }
+            });
+
+            // connect to server
+            var manageWS = new WebSocket(`ws://localhost:${wsPort}/manage`);
+
+            // provide access key and perform initial poll of terminal state
+            manageWS.onopen = function() {
+                if (accessKey) {
+                    manageWS.send(JSON.stringify({
+                        accessKey: accessKey
+                    }));
+                }
+                manageWS.send(JSON.stringify({type: "poll"}));
+            };
+
+            // redisplay terminal state whenever a poll response is received
+            // (will happen on state changes, not just when the client
+            // explicitly asks for it)
+            manageWS.onmessage = function(evt) {
+                var response = JSON.parse(evt.data)
+                if (response.response == 'poll') {
+                    displayState(response.result);
+                }
+                else {
+                    console.log("RESPONSE", response);
+                }
+            };
+
+            manageWS.onclose = function() {
+                console.log('Management WebSocket Exited');
+            };
+        </script>
+    </body>
+</html>

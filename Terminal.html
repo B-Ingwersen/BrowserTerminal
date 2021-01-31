@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Terminal</title>
+        <style>
+            body {
+                position: absolute;
+                left: 0;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                margin: 0;
+                background-color: #000000;
+            }
+        </style>
+        <link type="text/css" rel="stylesheet" href="Terminal.css">
+    </head>
+    <body>
+        <div class="term" id="terminal" tabindex="0"></div>
+        <script src="Terminal.js"></script>
+        <script>
+            // filled in by the server when the file is served
+            var accessKey = "__ACCESS_KEY__";
+            var sessionID = "__SESSION_ID__";
+            var wsPort = "__WS_PORT__";
+
+            // create a full screen terminal
+            var terminal = new Terminal(
+                document.getElementById('terminal'),
+                18,
+                window.innerWidth,
+                window.innerHeight
+            );
+
+            // connect to the server
+            var connection = new TerminalWSConnection(
+                terminal,
+                `ws://localhost:${wsPort}/term`,
+                accessKey,
+                sessionID
+            );
+            
+            // resize the terminal whenever the browser window resizes
+            window.addEventListener('resize', function(event) {
+                terminal.redimension(
+                    terminal.fontSize,
+                    window.innerWidth,
+                    window.innerHeight
+                );
+            });
+
+            // page-controlling key commands
+            document.addEventListener('keydown', function(event) {
+                // CTRL-R to reload the same session
+                if (event.key == 'r' && event.ctrlKey) {
+                    if (connection.sessionID != 'new') {
+                        window.location.href = '/?sessionID=' + connection.sessionID;
+                    }
+                    else {
+                        window.location.href = '/';
+                    }
+                }
+
+                // CTRL-SHIFT-R to spawn a new terminal
+                else if (event.key == 'N' && event.ctrlKey) {
+                    window.location.href = '/';
+                }
+                
+                // CTRL-SHIFT-ENTER to open the terminal management page
+                else if (event.key == "Enter" && event.ctrlKey && event.shiftKey) {
+                    window.location.href = 'manage';
+                }
+            });
+
+            terminal.focus();
+        </script>
+    </body>
+</html>
